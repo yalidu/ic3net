@@ -2,7 +2,7 @@ import sys
 import time
 import signal
 import argparse
-
+import pandas as pd
 import numpy as np
 import torch
 import visdom
@@ -13,22 +13,29 @@ from utils import *
 from action_utils import parse_action_args
 from trainer import Trainer
 from multi_processing import MultiProcessTrainer
-
+import time
+import datetime
+import os
 torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
 
 torch.set_default_tensor_type('torch.DoubleTensor')
 
+
+csv_data = []
+
+
+
 parser = argparse.ArgumentParser(description='PyTorch RL trainer')
 # training
 # note: number of steps per epoch = epoch_size X batch_size x nprocesses
-parser.add_argument('--num_epochs', default=100, type=int,
+parser.add_argument('--num_epochs', default=30000, type=int,
                     help='number of training epochs')
-parser.add_argument('--epoch_size', type=int, default=10,
+parser.add_argument('--epoch_size', type=int, default=1,
                     help='number of update iterations in an epoch')
-parser.add_argument('--batch_size', type=int, default=500,
+parser.add_argument('--batch_size', type=int, default=60,
                     help='number of steps before each update (per thread)')
-parser.add_argument('--nprocesses', type=int, default=16,
+parser.add_argument('--nprocesses', type=int, default=1,
                     help='How many processes to run')
 # model
 parser.add_argument('--hid_size', default=64, type=int,
@@ -36,24 +43,24 @@ parser.add_argument('--hid_size', default=64, type=int,
 parser.add_argument('--recurrent', action='store_true', default=False,
                     help='make the model recurrent in time')
 # optimization
-parser.add_argument('--gamma', type=float, default=1.0,
+parser.add_argument('--gamma', type=float, default=0.99,
                     help='discount factor')
-parser.add_argument('--tau', type=float, default=1.0,
+parser.add_argument('--tau', type=float, default=1,
                     help='gae (remove?)')
-parser.add_argument('--seed', type=int, default=-1,
+parser.add_argument('--seed', type=int, default=12,
                     help='random seed. Pass -1 for random seed') # TODO: works in thread?
 parser.add_argument('--normalize_rewards', action='store_true', default=False,
                     help='normalize rewards in each batch')
-parser.add_argument('--lrate', type=float, default=0.001,
+parser.add_argument('--lrate', type=float, default=0.007,
                     help='learning rate')
-parser.add_argument('--entr', type=float, default=0,
+parser.add_argument('--entr', type=float, default=0.99,
                     help='entropy regularization coeff')
 parser.add_argument('--value_coeff', type=float, default=0.01,
                     help='coeff for value loss term')
 # environment
 parser.add_argument('--env_name', default="Cartpole",
                     help='name of the environment to run')
-parser.add_argument('--max_steps', default=20, type=int,
+parser.add_argument('--max_steps', default=600, type=int,
                     help='force to end the game after this many steps')
 parser.add_argument('--nactions', default='1', type=str,
                     help='the number of agent actions (0 for continuous). Use N:M:K for multiple actions')
@@ -82,7 +89,7 @@ parser.add_argument('--commnet', action='store_true', default=False,
                     help="enable commnet model")
 parser.add_argument('--ic3net', action='store_true', default=False,
                     help="enable commnet model")
-parser.add_argument('--nagents', type=int, default=1,
+parser.add_argument('--nagents', type=int, default=4,
                     help="Number of agents (used in multiagent)")
 parser.add_argument('--comm_mode', type=str, default='avg',
                     help="Type of mode for communication tensor calculation [avg|sum]")
@@ -94,7 +101,7 @@ parser.add_argument('--mean_ratio', default=1.0, type=float,
                     help='how much coooperative to do? 1.0 means fully cooperative')
 parser.add_argument('--rnn_type', default='MLP', type=str,
                     help='type of rnn to use. [LSTM|MLP]')
-parser.add_argument('--detach_gap', default=10000, type=int,
+parser.add_argument('--detach_gap', default=500, type=int,
                     help='detach hidden state and cell state for rnns at this interval.'
                     + ' Default 10000 (very high)')
 parser.add_argument('--comm_init', default='uniform', type=str,
@@ -131,20 +138,25 @@ if hasattr(args, 'enemy_comm') and args.enemy_comm:
 
 env = data.init(args.env_name, args, False)
 
-num_inputs = env.observation_dim
-args.num_actions = env.num_actions
+num_inputs = max(env.n_s_ls)
+
+args.num_actions = env.n_a_ls[0]
+
+
 
 # Multi-action
 if not isinstance(args.num_actions, (list, tuple)): # single action case
     args.num_actions = [args.num_actions]
-args.dim_actions = env.dim_actions
+
+
+args.dim_actions = 1
 args.num_inputs = num_inputs
 
 # Hard attention
 if args.hard_attn and args.commnet:
     # add comm_action as last dim in actions
     args.num_actions = [*args.num_actions, 2]
-    args.dim_actions = env.dim_actions + 1
+    args.dim_actions = 1 + 1
 
 # Recurrence
 if args.commnet and (args.recurrent or args.rnn_type == 'LSTM'):
@@ -177,6 +189,8 @@ if not args.display:
 for p in policy_net.parameters():
     p.data.share_memory_()
 
+
+
 if args.nprocesses > 1:
     trainer = MultiProcessTrainer(args, lambda: Trainer(args, policy_net, data.init(args.env_name, args)))
 else:
@@ -203,19 +217,37 @@ log['entropy'] = LogField(list(), True, 'epoch', 'num_steps')
 if args.plot:
     vis = visdom.Visdom(env=args.plot_env)
 
+
+
+
+def _log_episode(global_step, mean_reward, std_reward):
+    log = {'agent': 'ic3net',
+           'step': global_step,
+           'test_id': -1,
+           'avg_reward': mean_reward,
+           'std_reward': std_reward}
+    csv_data.append(log)
+
+
 def run(num_epochs):
+
+    global_step =0
     for ep in range(num_epochs):
         epoch_begin_time = time.time()
         stat = dict()
         for n in range(args.epoch_size):
             if n == args.epoch_size - 1 and args.display:
-                trainer.display = True
-            s = trainer.train_batch(ep)
+                trainer.display = False
+            s, step_taken, avg_reward, std_reward = trainer.train_batch(ep)
             merge_stat(s, stat)
             trainer.display = False
-
+        global_step += step_taken
+        if global_step > int(1001000):
+            break
         epoch_time = time.time() - epoch_begin_time
         epoch = len(log['epoch'].data) + 1
+        _log_episode(global_step, avg_reward, std_reward)
+        '''
         for k, v in log.items():
             if k == 'epoch':
                 v.data.append(epoch)
@@ -223,25 +255,31 @@ def run(num_epochs):
                 if k in stat and v.divide_by is not None and stat[v.divide_by] > 0:
                     stat[k] = stat[k] / stat[v.divide_by]
                 v.data.append(stat.get(k, 0))
-
+        '''
         np.set_printoptions(precision=2)
 
-        print('Epoch {}\tReward {}\tTime {:.2f}s'.format(
-                epoch, stat['reward'], epoch_time
-        ))
-
+        #print('Epoch {}\tReward {}\tTime {:.2f}s'.format(
+       #         epoch, stat['reward'], epoch_time
+       #))
+        print(ep,'---',avg_reward)
         if 'enemy_reward' in stat.keys():
-            print('Enemy-Reward: {}'.format(stat['enemy_reward']))
+            pass
+            #print('Enemy-Reward: {}'.format(stat['enemy_reward']))
         if 'add_rate' in stat.keys():
-            print('Add-Rate: {:.2f}'.format(stat['add_rate']))
+            pass
+            #print('Add-Rate: {:.2f}'.format(stat['add_rate']))
         if 'success' in stat.keys():
-            print('Success: {:.2f}'.format(stat['success']))
+            pass
+            #print('Success: {:.2f}'.format(stat['success']))
         if 'steps_taken' in stat.keys():
-            print('Steps-taken: {:.2f}'.format(stat['steps_taken']))
+            pass
+            #print('Steps-taken: {:.2f}'.format(stat['steps_taken']))
         if 'comm_action' in stat.keys():
-            print('Comm-Action: {}'.format(stat['comm_action']))
+            pass
+            #print('Comm-Action: {}'.format(stat['comm_action']))
         if 'enemy_comm' in stat.keys():
-            print('Enemy-Comm: {}'.format(stat['enemy_comm']))
+            pass
+            #print('Enemy-Comm: {}'.format(stat['enemy_comm']))
 
         if args.plot:
             for k, v in log.items():
@@ -256,6 +294,18 @@ def run(num_epochs):
 
         if args.save != '':
             save(args.save)
+    save_dir = './results/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    model_dir = './models/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    df = pd.DataFrame(csv_data)
+    #print(df)
+    df.to_csv(save_dir+'train_reward.csv')
+
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+    save(model_dir + 'model.pt')
+    time.sleep(2)
 
 def save(path):
     d = dict()
@@ -264,6 +314,7 @@ def save(path):
     d['trainer'] = trainer.state_dict()
     torch.save(d, path)
 
+
 def load(path):
     d = torch.load(path)
     # log.clear()
@@ -271,6 +322,7 @@ def load(path):
     log.update(d['log'])
     trainer.load_state_dict(d['trainer'])
 
+#load('/home/liubo/Desktop/ICLR2021/IC3net_Traffic/IC3Net/models/2021_01_24_14_54_43/model.pt')
 def signal_handler(signal, frame):
         print('You pressed Ctrl+C! Exiting gracefully.')
         if args.display:

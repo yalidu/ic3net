@@ -1,3 +1,8 @@
+
+# cacc slowdown
+temp_output/
+results/
+test_temp_output/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

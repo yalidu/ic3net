@@ -6,7 +6,7 @@ from torch import optim
 import torch.nn as nn
 from utils import *
 from action_utils import *
-
+import time
 Transition = namedtuple('Transition', ('state', 'action', 'action_out', 'value', 'episode_mask', 'episode_mini_mask', 'next_state',
                                        'reward', 'misc'))
 
@@ -21,6 +21,10 @@ class Trainer(object):
         self.optimizer = optim.RMSprop(policy_net.parameters(),
             lr = args.lrate, alpha=0.97, eps=1e-6)
         self.params = [p for p in self.policy_net.parameters()]
+
+
+
+
 
 
     def get_episode(self, epoch):
@@ -39,11 +43,18 @@ class Trainer(object):
         switch_t = -1
 
         prev_hid = torch.zeros(1, self.args.nagents, self.args.hid_size)
-
+        step_taken = 0
+        episode_rewards = []
         for t in range(self.args.max_steps):
+            step_taken = step_taken +1
             misc = dict()
             if t == 0 and self.args.hard_attn and self.args.commnet:
                 info['comm_action'] = np.zeros(self.args.nagents, dtype=int)
+
+            for index in range(len(state)):
+                state[index] = np.pad(state[index],(0, max(self.env.n_s_ls)-len(state[index])))
+            state = torch.tensor(state, dtype=torch.float64, device= 'cpu').unsqueeze(0)
+            #print(state)
 
             # recurrence over time
             if self.args.recurrent:
@@ -60,14 +71,28 @@ class Trainer(object):
                         prev_hid = prev_hid.detach()
             else:
                 x = state
+                ######################
+                x = torch.tensor(x, dtype=torch.float64, device= 'cpu').unsqueeze(0)
+                #print(x.shape)
+                #print(state.shape)
+
+###################################################
                 action_out, value = self.policy_net(x, info)
 
             action = select_action(self.args, action_out)
             action, actual = translate_action(self.args, self.env, action)
-            next_state, reward, done, info = self.env.step(actual)
+            naction = list(actual[0])
 
+            next_state, _, done, init_reward = self.env.step(naction)
+            episode_rewards.append(init_reward)
+            reward = []
+            for i in range(self.args.nagents):
+                reward.append(init_reward)
+            reward = np.array(reward)
+            #print(info)
             # store comm_action in info for next step
             if self.args.hard_attn and self.args.commnet:
+                #print(action[-1])
                 info['comm_action'] = action[-1] if not self.args.comm_action_one else np.ones(self.args.nagents, dtype=int)
 
                 stat['comm_action'] = stat.get('comm_action', 0) + info['comm_action'][:self.args.nfriendly]
@@ -105,6 +130,7 @@ class Trainer(object):
             episode.append(trans)
             state = next_state
             if done:
+                self.env.output_data()
                 break
         stat['num_steps'] = t + 1
         stat['steps_taken'] = stat['num_steps']
@@ -123,7 +149,7 @@ class Trainer(object):
 
         if hasattr(self.env, 'get_stat'):
             merge_stat(self.env.get_stat(), stat)
-        return (episode, stat)
+        return (episode, stat, step_taken, np.mean(np.array(episode_rewards)), np.std(np.array(episode_rewards)))
 
     def compute_grad(self, batch):
         stat = dict()
@@ -231,7 +257,7 @@ class Trainer(object):
         while len(batch) < self.args.batch_size:
             if self.args.batch_size - len(batch) <= self.args.max_steps:
                 self.last_step = True
-            episode, episode_stat = self.get_episode(epoch)
+            episode, episode_stat, step_taken, avg_reward, std_reward  = self.get_episode(epoch)
             merge_stat(episode_stat, self.stats)
             self.stats['num_episodes'] += 1
             batch += episode
@@ -239,11 +265,14 @@ class Trainer(object):
         self.last_step = False
         self.stats['num_steps'] = len(batch)
         batch = Transition(*zip(*batch))
-        return batch, self.stats
+        return batch, self.stats, step_taken, avg_reward, std_reward
 
     # only used when nprocesses=1
     def train_batch(self, epoch):
-        batch, stat = self.run_batch(epoch)
+        #for i in range(50):
+        batch, stat, step_taken, avg_reward, std_reward = self.run_batch(epoch)
+        #self.env.output_data()
+        #time.sleep(100)
         self.optimizer.zero_grad()
 
         s = self.compute_grad(batch)
@@ -253,7 +282,7 @@ class Trainer(object):
                 p._grad.data /= stat['num_steps']
         self.optimizer.step()
 
-        return stat
+        return stat, step_taken, avg_reward, std_reward
 
     def state_dict(self):
         return self.optimizer.state_dict()

@@ -180,9 +180,10 @@ class CommNetMLP(nn.Module):
             # Choose current or prev depending on recurrent
             comm = hidden_state.view(batch_size, n, self.hid_size) if self.args.recurrent else hidden_state
 
+            comm = comm.squeeze(1)
             # Get the next communication vector based on next hidden state
             comm = comm.unsqueeze(-2).expand(-1, n, n, self.hid_size)
-
+            #print(comm)
             # Create mask for masking self communication
             mask = self.comm_mask.view(1, n, n)
             mask = mask.expand(comm.shape[0], n, n)
