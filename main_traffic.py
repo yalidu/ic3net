@@ -232,9 +232,9 @@ def _log_episode(global_step, mean_reward, std_reward):
 def run(num_epochs):
     # save_dir = './results/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
     # model_dir = './models/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-    save_dir = './results/{}_{}/{}/'.format(args.env_name, args.nagents,
+    save_dir = './results/{}_{}/seed_{}/{}/'.format(args.env_name, args.nagents, args.seed,
                                             datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-    model_dir = './models/{}_{}/{}/'.format(args.env_name, args.nagents,
+    model_dir = './models/{}_{}/seed_{}/{}/'.format(args.env_name, args.nagents, args.seed,
                                             datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
 
     if not os.path.exists(save_dir):
