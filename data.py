@@ -46,8 +46,8 @@ def init(env_name, args, final_init=True):
         env.init_data(True, False, output_path)
 
     elif env_name == 'cacc_slowdown':
-        output_path = '/home/liubo/Desktop/ICLR2021/IC3net_Traffic/IC3Net/temp_output/'
-        config_path = '/home/liubo/Desktop/ICLR2021/IC3net_Traffic/IC3Net/config/config_ia2c_slowdown.ini'
+        output_path = './temp_output/'
+        config_path = './config/config_ia2c_slowdown.ini'
         config = configparser.ConfigParser()
         config.read(config_path)
         env = CACCEnv(config['ENV_CONFIG'])

@@ -294,8 +294,11 @@ def run(num_epochs):
 
         if args.save != '':
             save(args.save)
-    save_dir = './results/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-    model_dir = './models/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    # save_dir = './results/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    # model_dir = './models/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    save_dir = './results/{}_{}/{}/'.format(args.env_name, args.nagents, datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    model_dir = './models/{}_{}/{}/'.format(args.env_name, args.nagents, datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     df = pd.DataFrame(csv_data)
@@ -334,7 +337,8 @@ signal.signal(signal.SIGINT, signal_handler)
 if args.load != '':
     load(args.load)
 
-run(args.num_epochs)
+# run(args.num_epochs)
+run(10)
 if args.display:
     env.end_display()
 
