@@ -230,7 +230,15 @@ def _log_episode(global_step, mean_reward, std_reward):
 
 
 def run(num_epochs):
+    # save_dir = './results/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    # model_dir = './models/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    save_dir = './results/{}_{}/{}/'.format(args.env_name, args.nagents,
+                                            datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+    model_dir = './models/{}_{}/{}/'.format(args.env_name, args.nagents,
+                                            datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
 
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     global_step =0
     for ep in range(num_epochs):
         epoch_begin_time = time.time()
@@ -294,13 +302,16 @@ def run(num_epochs):
 
         if args.save != '':
             save(args.save)
-    # save_dir = './results/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-    # model_dir = './models/{}/'.format(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-    save_dir = './results/{}_{}/{}/'.format(args.env_name, args.nagents, datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
-    model_dir = './models/{}_{}/{}/'.format(args.env_name, args.nagents, datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+        if ep %200==0:
+            # yali save reward and model every 200 epsi
+            df = pd.DataFrame(csv_data)
+            # print(df)
+            df.to_csv(save_dir + 'train_reward_{}.csv'.format(ep))
 
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
+            save(model_dir + 'model_{}.pt'.format(ep))
+
     df = pd.DataFrame(csv_data)
     #print(df)
     df.to_csv(save_dir+'train_reward.csv')

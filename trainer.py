@@ -130,7 +130,7 @@ class Trainer(object):
             episode.append(trans)
             state = next_state
             if done:
-                self.env.output_data()
+                # self.env.output_data()
                 break
         stat['num_steps'] = t + 1
         stat['steps_taken'] = stat['num_steps']
