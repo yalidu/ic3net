@@ -337,8 +337,8 @@ signal.signal(signal.SIGINT, signal_handler)
 if args.load != '':
     load(args.load)
 
-# run(args.num_epochs)
-run(10)
+run(args.num_epochs)
+# run(10)
 if args.display:
     env.end_display()
 
