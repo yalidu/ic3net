@@ -38,8 +38,8 @@ def init(env_name, args, final_init=True):
 
 
     elif env_name == 'cacc_catchup':
-        output_path = '/home/liubo/Desktop/ICLR2021/IC3net_Traffic/IC3Net/test_temp_output/'
-        config_path = '/home/liubo/Desktop/ICLR2021/IC3net_Traffic/IC3Net/config/config_ia2c_catchup.ini'
+        output_path = './test_temp_output/'
+        config_path = './config/config_ia2c_catchup.ini'
         config = configparser.ConfigParser()
         config.read(config_path)
         env = CACCEnv(config['ENV_CONFIG'])
